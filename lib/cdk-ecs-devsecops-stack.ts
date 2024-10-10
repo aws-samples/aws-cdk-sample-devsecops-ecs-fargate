@@ -1,29 +1,30 @@
-import cdk = require('@aws-cdk/core');
-import ec2 = require("@aws-cdk/aws-ec2");
-import ecr = require('@aws-cdk/aws-ecr');
-import ecs = require("@aws-cdk/aws-ecs");
-import ecs_patterns = require("@aws-cdk/aws-ecs-patterns");
-import iam = require("@aws-cdk/aws-iam");
-import codebuild = require('@aws-cdk/aws-codebuild');
-import codecommit = require('@aws-cdk/aws-codecommit');
-import targets = require('@aws-cdk/aws-events-targets');
-import codedeploy = require('@aws-cdk/aws-codedeploy');
-import codepipeline = require('@aws-cdk/aws-codepipeline');
-import codepipeline_actions = require('@aws-cdk/aws-codepipeline-actions');
+import { Stack, StackProps, CfnOutput } from 'aws-cdk-lib';
+import { Construct } from 'constructs';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as ecs from 'aws-cdk-lib/aws-ecs';
+import * as ecs_patterns from 'aws-cdk-lib/aws-ecs-patterns';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as ecr from 'aws-cdk-lib/aws-ecr';
+import * as codecommit from 'aws-cdk-lib/aws-codecommit';
+import * as codebuild from 'aws-cdk-lib/aws-codebuild';
+import * as codepipeline from 'aws-cdk-lib/aws-codepipeline';
+import * as codepipeline_actions from 'aws-cdk-lib/aws-codepipeline-actions';
 
 
-export class CdkEcsDevsecopsStack extends cdk.Stack {
-  constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
+export class CdkEcsDevsecopsStack extends Stack {
+  constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
+    
+    const vpcId = this.node.tryGetContext('vpcId');
 
-
-const vpc = ec2.Vpc.fromLookup(this, 'vpc', {
-  vpcId:'vpc-XXXXXXXXXXXXX'
-  });
-
-    const clusterAdmin = new iam.Role(this, 'AdminRole', {
-      assumedBy: new iam.AccountRootPrincipal()
+    const vpc = ec2.Vpc.fromLookup(this, 'vpc', {
+      vpcId: vpcId
     });
+
+
+    if (!vpcId) {
+      throw new Error('VPC ID must be provided in the context. Use -c vpcId=<your-vpc-id> when deploying.');
+    }
 
     const cluster = new ecs.Cluster(this, "ecs-cdk-devsecops-cluster", {
       vpc: vpc,
@@ -38,18 +39,17 @@ const vpc = ec2.Vpc.fromLookup(this, 'vpc', {
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com')
     });
 
-
-    const executionRolePolicy =  new iam.PolicyStatement({
+    const executionRolePolicy = new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
       resources: ['*'],
       actions: [
-                "ecr:GetAuthorizationToken",
-                "ecr:BatchCheckLayerAvailability",
-                "ecr:GetDownloadUrlForLayer",
-                "ecr:BatchGetImage",
-                "logs:CreateLogStream",
-                "logs:PutLogEvents"
-            ]
+        "ecr:GetAuthorizationToken",
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchGetImage",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ]
     });
 
     const taskDef = new ecs.FargateTaskDefinition(this, "cs-cdk-devsecops-taskdef", {
@@ -66,7 +66,7 @@ const vpc = ec2.Vpc.fromLookup(this, 'vpc', {
     });
 
     container.addPortMappings({
-      containerPort: 80 ,
+      containerPort: 80,
       protocol: ecs.Protocol.TCP
     });
 
@@ -78,15 +78,12 @@ const vpc = ec2.Vpc.fromLookup(this, 'vpc', {
       listenerPort: 80
     });
 
- 
     const ecrRepo = new ecr.Repository(this, 'cs-cdk-devsecops-ecr-repo');
 
     const repo = new codecommit.Repository(this, "amazon-ecs-fargate-cdk-cicd", {
       repositoryName: "amazon-ecs-fargate-cdk-cicd",
       description: "amazon-ecs-fargate-cdk-cicd"
     });    
-  
-
 
     // CODEBUILD - project
     const project = new codebuild.Project(this, 'MyProject', {
@@ -122,7 +119,6 @@ const vpc = ec2.Vpc.fromLookup(this, 'vpc', {
               'echo Logging in to Amazon ECR...',
               '$ECR_LOGIN',
               'IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)',
-     //         "'PASSWORD=`echo $ECR_LOGIN | cut -d' ' -f6`'",
               `docker build -f Dockerfile -t $ECR_REPOSITORY_URI:latest .`,
               'docker tag $ECR_REPOSITORY_URI:latest $ECR_REPOSITORY_URI:$IMAGE_TAG',
               'docker history --no-trunc $ECR_REPOSITORY_URI:$IMAGE_TAG'
@@ -180,6 +176,7 @@ const vpc = ec2.Vpc.fromLookup(this, 'vpc', {
     });
 
     new codepipeline.Pipeline(this, 'cs-cdk-devsecops-pipeline', {
+      pipelineType: codepipeline.PipelineType.V2,
       stages: [
         {
           stageName: 'Source',
@@ -214,9 +211,11 @@ const vpc = ec2.Vpc.fromLookup(this, 'vpc', {
     }));
 
 
-    new cdk.CfnOutput(this, 'LoadBalancerDNS', { value: fargateService.loadBalancer.loadBalancerDnsName });
-    new cdk.CfnOutput(this, 'ECRURI', { value: ecrRepo.repositoryUri });
-    new cdk.CfnOutput(this, 'Container', { value: container.containerName });
+    
+    new CfnOutput(this, 'LoadBalancerDNS', { value: fargateService.loadBalancer.loadBalancerDnsName });
+    new CfnOutput(this, 'ECRURI', { value: ecrRepo.repositoryUri });
+    new CfnOutput(this, 'Container', { value: container.containerName });
+    
  
   }
 }

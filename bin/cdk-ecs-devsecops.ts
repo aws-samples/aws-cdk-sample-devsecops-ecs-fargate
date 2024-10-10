@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
-import * as cdk from '@aws-cdk/core';
+import * as cdk from 'aws-cdk-lib';
 import { CdkEcsDevsecopsStack } from '../lib/cdk-ecs-devsecops-stack';
 
 
@@ -13,4 +13,6 @@ env: {
   region: process.env.CDK_DEFAULT_REGION 
 },
 });
+
+
 
